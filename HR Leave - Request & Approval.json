@@ -1,0 +1,1464 @@
+{
+  "name": "HR Leave - Request & Approval",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Leave Request",
+        "formDescription": "Submit your leave request. HR will review it and you will get an email with the decision.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Employee ID",
+              "placeholder": "e.g. EMP001",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Employee Name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Email",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Leave Date",
+              "fieldType": "date",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Leave Type",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Full Day"
+                  },
+                  {
+                    "option": "Half Day"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Reason",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "path": "leave-request",
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Your leave request was submitted. You will receive an email once it is decided."
+            }
+          }
+        }
+      },
+      "id": "0208d169-b50b-4141-9a38-703592af66d3",
+      "name": "Leave Request Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        96
+      ],
+      "webhookId": "23135a3b-6eed-41ac-9c39-7cdd1bfb6cce"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "hr",
+              "name": "hr_email",
+              "type": "string",
+              "value": "sakshikannor@gmail.com"
+            },
+            {
+              "id": "dir",
+              "name": "director_email",
+              "type": "string",
+              "value": "kannorsakshu@gmail.com"
+            },
+            {
+              "id": "lim",
+              "name": "monthly_limit",
+              "type": "number",
+              "value": 3
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9c76dd2f-95f2-4d6c-aeaa-76c89efde749",
+      "name": "Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        272,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ZD1kUbsq6SRZWVYj",
+          "cachedResultName": "leave_requests"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "employee_id",
+              "keyValue": "={{ String($('Leave Request Form').first().json['Employee ID'] || '').trim().toUpperCase() }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "4937b7f4-fc0c-435a-a9e2-774bd67bce76",
+      "name": "Get Employee Leaves",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        496,
+        224
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const f = $('Leave Request Form').first().json;\nconst cfg = $('Settings').first().json;\nconst emp = String(f['Employee ID'] || '').trim().toUpperCase();\nconst date = String(f['Leave Date'] || '').slice(0, 10);\nconst month = date.slice(0, 7);\nconst dayType = f['Leave Type'] === 'Half Day' ? 'Half Day' : 'Full Day';\nconst days = dayType === 'Half Day' ? 0.5 : 1;\nconst limit = Number(cfg.monthly_limit) || 3;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.request_id);\nconst sameMonth = rows.filter(r => String(r.leave_date || '').slice(0, 7) === month);\nconst isApproved = st => String(st || '').indexOf('Approved') === 0;\nconst used = sameMonth.filter(r => isApproved(r.status)).reduce((s, r) => s + (Number(r.leave_days) || 0), 0);\nconst escalated = used + days > limit;\nconst hist = sameMonth.slice().sort((a, b) => String(a.leave_date).localeCompare(String(b.leave_date)));\nconst cell = 'padding:6px 8px;border-bottom:1px solid #eef0f3;font-size:13px;text-align:left';\nconst color = st => isApproved(st) ? '#15803d' : (String(st).indexOf('Rejected') >= 0 ? '#b91c1c' : '#b45309');\nlet historyHtml = '<p style=\"color:#6b7280;font-size:13px;margin:4px 0\">No other leave requests this month.</p>';\nif (hist.length > 0) {\n  historyHtml = '<table style=\"width:100%;border-collapse:collapse;margin:6px 0\"><tr style=\"background:#f3f4f6\"><th style=\"' + cell + '\">Date</th><th style=\"' + cell + '\">Type</th><th style=\"' + cell + '\">Days</th><th style=\"' + cell + '\">Status</th></tr>'\n    + hist.map(r => '<tr><td style=\"' + cell + '\">' + r.leave_date + '</td><td style=\"' + cell + '\">' + r.day_type + '</td><td style=\"' + cell + '\">' + r.leave_days + '</td><td style=\"' + cell + ';color:' + color(r.status) + ';font-weight:bold\">' + r.status + '</td></tr>').join('')\n    + '</table>';\n}\nreturn [{ json: {\n  request_id: 'LR-' + Date.now(),\n  employee_id: emp,\n  employee_name: String(f['Employee Name'] || '').trim(),\n  employee_email: String(f['Email'] || '').trim(),\n  leave_date: date,\n  month: month,\n  day_type: dayType,\n  leave_days: days,\n  reason: String(f['Reason'] || ''),\n  leaves_used_before: used,\n  monthly_limit: limit,\n  escalated: escalated,\n  status: escalated ? 'Pending HR + Director' : 'Pending HR',\n  submitted_at: $now.setZone('Asia/Kolkata').toFormat('yyyy-MM-dd HH:mm'),\n  hr_email: cfg.hr_email,\n  director_email: cfg.director_email,\n  remaining_days: Math.max(limit - used, 0),\n  history_html: historyHtml,\n} }];"
+      },
+      "id": "e338122e-2036-42c1-b893-65bf267f18da",
+      "name": "Prepare Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ZD1kUbsq6SRZWVYj",
+          "cachedResultName": "leave_requests"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "request_id": "={{ $json.request_id }}",
+            "employee_id": "={{ $json.employee_id }}",
+            "employee_name": "={{ $json.employee_name }}",
+            "employee_email": "={{ $json.employee_email }}",
+            "leave_date": "={{ $json.leave_date }}",
+            "day_type": "={{ $json.day_type }}",
+            "leave_days": "={{ $json.leave_days }}",
+            "reason": "={{ $json.reason }}",
+            "status": "={{ $json.status }}",
+            "leaves_used_before": "={{ $json.leaves_used_before }}",
+            "escalated": "={{ $json.escalated }}",
+            "hr_decision": "Pending",
+            "director_decision": "={{ $json.escalated ? 'Pending' : 'Not required' }}",
+            "submitted_at": "={{ $json.submitted_at }}",
+            "decided_at": ""
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "83e1adb0-171b-4dc5-9277-3e35ba6ddc06",
+      "name": "Save Request",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        944,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "esc",
+              "leftValue": "={{ $('Prepare Request').first().json.escalated }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ed72b663-5aac-45f7-8dcf-93018f331234",
+      "name": "Over Monthly Limit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        752,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a",
+              "name": "approved",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "id": "h",
+              "name": "hr_decision",
+              "type": "string",
+              "value": "Auto-rejected (monthly limit reached)"
+            },
+            {
+              "id": "d",
+              "name": "director_decision",
+              "type": "string",
+              "value": "Emergency review pending"
+            },
+            {
+              "id": "ty",
+              "name": "decision_type",
+              "type": "string",
+              "value": "Auto-Rejected"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f12bab25-0a9d-497e-9b3a-53e51c432d4c",
+      "name": "Auto Reject",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1632,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s",
+              "name": "status",
+              "type": "string",
+              "value": "={{ $json.approved ? ($json.decision_type === 'Emergency Approved' ? 'Approved (Emergency)' : 'Approved') : ($json.decision_type === 'Auto-Rejected' ? 'Auto-Rejected' : 'Rejected') }}"
+            },
+            {
+              "id": "t",
+              "name": "decided_at",
+              "type": "string",
+              "value": "={{ $now.setZone('Asia/Kolkata').toFormat('yyyy-MM-dd HH:mm') }}"
+            },
+            {
+              "id": "r",
+              "name": "request_id",
+              "type": "string",
+              "value": "={{ $('Prepare Request').first().json.request_id }}"
+            },
+            {
+              "id": "n",
+              "name": "employee_name",
+              "type": "string",
+              "value": "={{ $('Prepare Request').first().json.employee_name }}"
+            },
+            {
+              "id": "e",
+              "name": "employee_email",
+              "type": "string",
+              "value": "={{ $('Prepare Request').first().json.employee_email }}"
+            },
+            {
+              "id": "i",
+              "name": "employee_id",
+              "type": "string",
+              "value": "={{ $('Prepare Request').first().json.employee_id }}"
+            },
+            {
+              "id": "ld",
+              "name": "leave_date",
+              "type": "string",
+              "value": "={{ $('Prepare Request').first().json.leave_date }}"
+            },
+            {
+              "id": "dt",
+              "name": "day_type",
+              "type": "string",
+              "value": "={{ $('Prepare Request').first().json.day_type }}"
+            },
+            {
+              "id": "x",
+              "name": "escalated",
+              "type": "boolean",
+              "value": "={{ $('Prepare Request').first().json.escalated }}"
+            },
+            {
+              "id": "cc",
+              "name": "cc_list",
+              "type": "string",
+              "value": "={{ $('Prepare Request').first().json.escalated ? $('Prepare Request').first().json.hr_email + ',' + $('Prepare Request').first().json.director_email : $('Prepare Request').first().json.hr_email }}"
+            },
+            {
+              "id": "ua",
+              "name": "used_after",
+              "type": "number",
+              "value": "={{ $('Prepare Request').first().json.leaves_used_before + ($json.approved ? $('Prepare Request').first().json.leave_days : 0) }}"
+            },
+            {
+              "id": "hc",
+              "name": "header_color",
+              "type": "string",
+              "value": "={{ $json.approved ? '#15803d' : '#b91c1c' }}"
+            },
+            {
+              "id": "et",
+              "name": "email_title",
+              "type": "string",
+              "value": "={{ ({ 'Standard': $json.approved ? 'Your Leave Request Has Been Approved' : 'Your Leave Request Has Been Rejected', 'Auto-Rejected': 'Leave Request Auto-Rejected: Monthly Limit Reached', 'Emergency Approved': 'Update: Leave Approved as an Emergency Exception', 'Emergency Declined': 'Update: Emergency Review Complete' })[$json.decision_type] }}"
+            },
+            {
+              "id": "ei",
+              "name": "email_intro",
+              "type": "string",
+              "value": "={{ ({ 'Standard': $json.approved ? 'We are pleased to let you know that your leave request has been approved. Please make sure your work is handed over before you go.' : 'We regret to inform you that your leave request could not be approved this time. Please contact HR if you would like to discuss it.', 'Auto-Rejected': 'Your leave request has been automatically rejected because you have already used your ' + $('Prepare Request').first().json.monthly_limit + ' approved leave days for ' + $('Prepare Request').first().json.month + '.', 'Emergency Approved': 'Following an emergency review, the Director and HR have approved your leave request as an exception. Your earlier auto-rejection no longer applies.', 'Emergency Declined': 'Your request was reviewed as a possible emergency, but it could not be approved. Your leave remains rejected. Please contact HR if you have any questions.' })[$json.decision_type] }}"
+            },
+            {
+              "id": "en",
+              "name": "email_note",
+              "type": "string",
+              "value": "={{ $json.decision_type === 'Auto-Rejected' ? '<div style=\"background:#fffbeb;border-left:4px solid #d97706;padding:10px 14px;margin:14px 0;color:#78350f\"><b>Is this an emergency?</b> Please contact HR right away. HR will discuss it with the Director, and if it is approved you will receive an updated email.</div>' : ($json.decision_type === 'Emergency Approved' ? '<div style=\"background:#f0fdf4;border-left:4px solid #15803d;padding:10px 14px;margin:14px 0;color:#14532d\">This leave was approved as an emergency exception beyond your monthly limit, by the Director and confirmed by HR.</div>' : '') }}"
+            },
+            {
+              "id": "rh",
+              "name": "remarks_html",
+              "type": "string",
+              "value": "={{ ($json.director_remarks || $json.hr_remarks) ? '<div style=\"background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin:14px 0\"><div style=\"font-weight:bold;margin-bottom:6px\">Remarks</div><div><b>Director:</b> ' + ($json.director_remarks || '-') + '</div><div><b>HR:</b> ' + ($json.hr_remarks || '-') + '</div></div>' : '' }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "78ae84e4-2be6-416b-a204-b33fa0bb88df",
+      "name": "Final Decision",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2048,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ZD1kUbsq6SRZWVYj",
+          "cachedResultName": "leave_requests"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "request_id",
+              "keyValue": "={{ $json.request_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "={{ $json.status }}",
+            "hr_decision": "={{ $json.hr_decision }}",
+            "director_decision": "={{ $json.director_decision }}",
+            "decided_at": "={{ $json.decided_at }}",
+            "decision_type": "={{ $json.decision_type }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "eb436004-4eb7-4c6b-8dc1-1a3afefafd2d",
+      "name": "Update Leave Status",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2272,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Final Decision').first().json.employee_email }}",
+        "subject": "={{ $('Final Decision').first().json.decision_type.startsWith('Emergency') ? 'Update: ' : '' }}Leave Request {{ $('Final Decision').first().json.status }}: {{ $('Final Decision').first().json.leave_date }} | {{ $('Final Decision').first().json.request_id }}",
+        "message": "=<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden\">\n<div style=\"background:{{ $('Final Decision').first().json.header_color }};color:#ffffff;padding:18px 24px\"><div style=\"font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:0.85\">HR Leave Management</div><div style=\"font-size:20px;font-weight:bold;margin-top:4px\">{{ $('Final Decision').first().json.email_title }}</div></div>\n<div style=\"padding:20px 24px;color:#1f2937;font-size:14px;line-height:1.6\">\n<p style=\"margin-top:0\">Dear {{ $('Final Decision').first().json.employee_name }},</p>\n<p>{{ $('Final Decision').first().json.email_intro }}</p>\n<table style=\"width:100%;border-collapse:collapse;font-size:14px;margin:12px 0\">\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3;width:40%\">Request ID</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\"><b>{{ $('Final Decision').first().json.request_id }}</b></td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Leave date</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Final Decision').first().json.leave_date }} &middot; {{ $('Final Decision').first().json.day_type }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Reason</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.reason }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Status</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\"><span style=\"display:inline-block;padding:3px 10px;border-radius:12px;font-weight:bold;color:#ffffff;background:{{ $('Final Decision').first().json.header_color }}\">{{ $('Final Decision').first().json.status.toUpperCase() }}</span></td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">HR decision</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Final Decision').first().json.hr_decision }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Director decision</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Final Decision').first().json.director_decision }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Decided on</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Final Decision').first().json.decided_at }} IST</td></tr>\n</table>\n{{ $('Final Decision').first().json.email_note }}\n{{ $('Final Decision').first().json.remarks_html }}\n<div style=\"margin:16px 0 4px;font-weight:bold\">Your leave balance for {{ $('Prepare Request').first().json.month }}: {{ $('Final Decision').first().json.used_after }} of {{ $('Prepare Request').first().json.monthly_limit }} days used &middot; {{ Math.max($('Prepare Request').first().json.monthly_limit - $('Final Decision').first().json.used_after, 0) }} remaining</div>\n<div style=\"color:#6b7280;font-size:12px\">Your other leave requests this month:</div>\n{{ $('Prepare Request').first().json.history_html }}\n<p style=\"margin-top:16px\"><a href=\"https://rohit6789.app.n8n.cloud/form/leave-request\" style=\"display:inline-block;padding:9px 16px;border-radius:6px;background:#1f3a5f;color:#ffffff;text-decoration:none\">Submit Another Request</a></p>\n<p style=\"margin-bottom:0\">Best regards,<br><b>HR Team</b></p>\n<p style=\"color:#9ca3af;font-size:11px\">This is an automated message from the HR Leave Management system.</p>\n</div></div>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "3dad5f17-cb0b-4499-97a8-a41b33557628",
+      "name": "Email Employee",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2496,
+        224
+      ],
+      "webhookId": "dc5c889a-1658-4042-9e76-bf19cd81d110",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "o6mbBvJmw9UlUE4d",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ZD1kUbsq6SRZWVYj",
+          "cachedResultName": "leave_requests"
+        },
+        "returnAll": true
+      },
+      "id": "0b2a3567-ba62-4fd2-9ba3-298aa4f26ce9",
+      "name": "Get All Leaves",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2720,
+        224
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "clear",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "19aTTLg00QFRrnIXjdRlJ32s_ay6TOU9DxfV3dXfXklE",
+          "cachedResultName": "HR Leave Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "1001321071",
+          "cachedResultName": "Leave Register"
+        }
+      },
+      "id": "9a999bb0-76f2-426d-9466-d6ab0cf76bcf",
+      "name": "Clear Register",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2944,
+        224
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "WNfSkWtGMOycY1U5",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $('Get All Leaves').all().map(i => i.json).filter(r => r && r.request_id);\nrows.sort((a, b) => String(b.submitted_at || '').localeCompare(String(a.submitted_at || '')));\nreturn rows.map(r => ({ json: {\n  'Request ID': r.request_id,\n  'Month': String(r.leave_date || '').slice(0, 7),\n  'Employee ID': r.employee_id,\n  'Employee Name': r.employee_name,\n  'Employee Email': r.employee_email,\n  'Leave Date': r.leave_date,\n  'Day Type': r.day_type,\n  'Days': r.leave_days,\n  'Reason': r.reason,\n  'Status': r.status,\n  'Decision Type': r.decision_type || 'Standard',\n  'Approved Days Before': r.leaves_used_before,\n  'Escalated': r.escalated ? 'Yes' : 'No',\n  'HR Decision': r.hr_decision,\n  'Director Decision': r.director_decision,\n  'Submitted At': r.submitted_at,\n  'Decided At': r.decided_at || '',\n} }));"
+      },
+      "id": "9abc870a-b683-47c6-864c-860825add93e",
+      "name": "Format Register",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3168,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "19aTTLg00QFRrnIXjdRlJ32s_ay6TOU9DxfV3dXfXklE",
+          "cachedResultName": "HR Leave Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "1001321071",
+          "cachedResultName": "Leave Register"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Request ID",
+              "displayName": "Request ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Month",
+              "displayName": "Month",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Employee ID",
+              "displayName": "Employee ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Employee Name",
+              "displayName": "Employee Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Employee Email",
+              "displayName": "Employee Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Leave Date",
+              "displayName": "Leave Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Day Type",
+              "displayName": "Day Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Days",
+              "displayName": "Days",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Decision Type",
+              "displayName": "Decision Type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Approved Days Before",
+              "displayName": "Approved Days Before",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Escalated",
+              "displayName": "Escalated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "HR Decision",
+              "displayName": "HR Decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Director Decision",
+              "displayName": "Director Decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Decided At",
+              "displayName": "Decided At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED"
+        }
+      },
+      "id": "2f353298-20d5-45f2-b8ab-ce72c0fbc2c5",
+      "name": "Write Register",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3392,
+        224
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "WNfSkWtGMOycY1U5",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "clear",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "19aTTLg00QFRrnIXjdRlJ32s_ay6TOU9DxfV3dXfXklE",
+          "cachedResultName": "HR Leave Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "898352928",
+          "cachedResultName": "Monthly Summary"
+        }
+      },
+      "id": "bdd1b678-567e-46e2-8513-d388f0a340cc",
+      "name": "Clear Summary",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3616,
+        224
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "WNfSkWtGMOycY1U5",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const limit = Number($('Settings').first().json.monthly_limit) || 3;\nconst rows = $('Get All Leaves').all().map(i => i.json).filter(r => r && r.request_id);\nconst groups = {};\nfor (const r of rows) {\n  const month = String(r.leave_date || '').slice(0, 7);\n  const key = month + '|' + r.employee_id;\n  if (!groups[key]) groups[key] = { month, id: r.employee_id, name: r.employee_name, email: r.employee_email, approved: 0, dates: [], rejected: 0, auto: 0, emergency: 0, pending: 0, total: 0 };\n  const g = groups[key];\n  g.total += 1;\n  const st = String(r.status || '');\n  if (st.indexOf('Approved') === 0) {\n    g.approved += Number(r.leave_days) || 0;\n    g.dates.push(r.leave_date + (r.day_type === 'Half Day' ? ' (half)' : ''));\n    if (st.indexOf('Emergency') >= 0) g.emergency += 1;\n  } else if (st.indexOf('Rejected') >= 0) {\n    g.rejected += 1;\n    if (st === 'Auto-Rejected') g.auto += 1;\n  } else g.pending += 1;\n}\nconst out = Object.values(groups).sort((a, b) => b.month.localeCompare(a.month) || String(a.name).localeCompare(String(b.name)));\nreturn out.map(g => ({ json: {\n  'Month': g.month,\n  'Employee ID': g.id,\n  'Employee Name': g.name,\n  'Employee Email': g.email,\n  'Approved Days': g.approved,\n  'Monthly Limit': limit,\n  'Remaining Days': Math.max(limit - g.approved, 0),\n  'Limit Status': g.approved > limit ? 'Over limit (emergency)' : (g.approved >= limit ? 'Limit reached' : 'Within limit'),\n  'Approved Leave Dates': g.dates.sort().join(', '),\n  'Rejected Requests': g.rejected,\n  'Auto-Rejected': g.auto,\n  'Emergency Approved': g.emergency,\n  'Pending Requests': g.pending,\n  'Total Requests': g.total,\n} }));"
+      },
+      "id": "9135d84d-fd7e-448f-a141-c69c856cbdf8",
+      "name": "Build Monthly Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3840,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "19aTTLg00QFRrnIXjdRlJ32s_ay6TOU9DxfV3dXfXklE",
+          "cachedResultName": "HR Leave Register"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "898352928",
+          "cachedResultName": "Monthly Summary"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED"
+        }
+      },
+      "id": "43207ddc-23ed-43dd-998f-e3d0c5aa7d7a",
+      "name": "Write Summary",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        4064,
+        224
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "WNfSkWtGMOycY1U5",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "er",
+              "leftValue": "={{ $('Final Decision').first().json.decision_type }}",
+              "rightValue": "Auto-Rejected",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "01d1f88b-fac7-478a-b2a5-09b52a8bf798",
+      "name": "Needs Emergency Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3104,
+        736
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "={{ $('Prepare Request').first().json.director_email }}",
+        "subject": "=[Emergency Review] Auto-rejected leave: {{ $('Prepare Request').first().json.employee_name }} | {{ $('Prepare Request').first().json.request_id }}",
+        "message": "=<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden\">\n<div style=\"background:#4c1d95;color:#ffffff;padding:18px 24px\"><div style=\"font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:0.85\">HR Leave Management &middot; Emergency Review</div><div style=\"font-size:20px;font-weight:bold;margin-top:4px\">Auto-Rejected Leave: Emergency Exception?</div></div>\n<div style=\"padding:20px 24px;color:#1f2937;font-size:14px;line-height:1.6\">\n<p style=\"margin-top:0\">Dear Director,</p>\n<p>This request was <b style=\"color:#b91c1c\">automatically rejected</b> because the employee has already used their monthly leave limit. The employee and HR have been informed.</p>\n<table style=\"width:100%;border-collapse:collapse;font-size:14px;margin:12px 0\">\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3;width:40%\">Request ID</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\"><b>{{ $('Prepare Request').first().json.request_id }}</b></td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Employee</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.employee_name }} ({{ $('Prepare Request').first().json.employee_id }})</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Email</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.employee_email }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Leave date</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.leave_date }} &middot; {{ $('Prepare Request').first().json.day_type }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Reason</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.reason }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Submitted</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.submitted_at }} IST</td></tr>\n</table>\n<div style=\"margin:16px 0 4px;font-weight:bold\">Leave this month ({{ $('Prepare Request').first().json.month }}): {{ $('Prepare Request').first().json.leaves_used_before }} of {{ $('Prepare Request').first().json.monthly_limit }} days used &middot; {{ $('Prepare Request').first().json.remaining_days }} remaining</div>\n{{ $('Prepare Request').first().json.history_html }}\n<div style=\"background:#f5f3ff;border-left:4px solid #4c1d95;padding:10px 14px;margin:14px 0;color:#3b0764\"><b>Emergency exception:</b> If HR has discussed this with you and it is a genuine emergency, click <b>Review and Respond</b> below, choose <b>Approve as Emergency</b> and add your remarks. HR will then be asked to confirm, and the employee will get an updated email with the remarks. Otherwise choose <b>Keep Rejected</b>.</div>\n<p style=\"margin:16px 0 0\"><a href=\"https://docs.google.com/spreadsheets/d/19aTTLg00QFRrnIXjdRlJ32s_ay6TOU9DxfV3dXfXklE/edit\" style=\"display:inline-block;padding:8px 14px;border:1px solid #1f3a5f;border-radius:6px;color:#1f3a5f;text-decoration:none\">View Leave Register</a></p>\n</div></div>",
+        "responseType": "customForm",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Decision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Approve as Emergency"
+                  },
+                  {
+                    "option": "Keep Rejected"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Remarks",
+              "fieldType": "textarea",
+              "placeholder": "Your remarks for HR and the employee",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "messageButtonLabel": "Review and Respond",
+          "responseFormTitle": "Emergency Leave Review",
+          "responseFormDescription": "Choose your decision and add remarks. If you approve, HR will be asked to confirm.",
+          "appendAttribution": false
+        }
+      },
+      "id": "a2480133-bd41-40ae-950d-c63e3b8ced77",
+      "name": "Director Emergency Review",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1968,
+        640
+      ],
+      "webhookId": "637450f4-5aac-4a51-a495-7b4736fe12b8",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "o6mbBvJmw9UlUE4d",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dirok",
+              "leftValue": "={{ String(($json.data || {}).Decision || ($json.data || {}).decision || '').indexOf('Approve') === 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7a7cc5b5-6346-4370-b76c-b0652ccfd06c",
+      "name": "Director Accepted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1744,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "={{ $('Prepare Request').first().json.hr_email }}",
+        "subject": "=[Action Required] Director approved emergency leave: {{ $('Prepare Request').first().json.employee_name }} | {{ $('Prepare Request').first().json.request_id }}",
+        "message": "=<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden\">\n<div style=\"background:#b45309;color:#ffffff;padding:18px 24px\"><div style=\"font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:0.85\">HR Leave Management &middot; Emergency</div><div style=\"font-size:20px;font-weight:bold;margin-top:4px\">Director Approved: Please Confirm</div></div>\n<div style=\"padding:20px 24px;color:#1f2937;font-size:14px;line-height:1.6\">\n<p style=\"margin-top:0\">Dear HR Team,</p>\n<p>The Director has <b style=\"color:#15803d\">approved this auto-rejected request as an emergency exception</b>. Please confirm to approve the leave. The employee will receive an updated email straight away.</p>\n<table style=\"width:100%;border-collapse:collapse;font-size:14px;margin:12px 0\">\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3;width:40%\">Request ID</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\"><b>{{ $('Prepare Request').first().json.request_id }}</b></td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Employee</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.employee_name }} ({{ $('Prepare Request').first().json.employee_id }})</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Email</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.employee_email }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Leave date</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.leave_date }} &middot; {{ $('Prepare Request').first().json.day_type }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Reason</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.reason }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Submitted</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.submitted_at }} IST</td></tr>\n</table>\n<div style=\"margin:16px 0 4px;font-weight:bold\">Leave this month ({{ $('Prepare Request').first().json.month }}): {{ $('Prepare Request').first().json.leaves_used_before }} of {{ $('Prepare Request').first().json.monthly_limit }} days used &middot; {{ $('Prepare Request').first().json.remaining_days }} remaining</div>\n{{ $('Prepare Request').first().json.history_html }}\n<p style=\"margin:16px 0 0\"><a href=\"https://docs.google.com/spreadsheets/d/19aTTLg00QFRrnIXjdRlJ32s_ay6TOU9DxfV3dXfXklE/edit\" style=\"display:inline-block;padding:8px 14px;border:1px solid #1f3a5f;border-radius:6px;color:#1f3a5f;text-decoration:none\">View Leave Register</a></p>\n<div style=\"background:#f0fdf4;border-left:4px solid #15803d;padding:10px 14px;margin:14px 0;color:#14532d\"><b>Director remarks:</b> {{ ($('Director Emergency Review').first().json.data || {}).Remarks || ($('Director Emergency Review').first().json.data || {}).remarks || '-' }}</div>\n<p style=\"color:#6b7280;font-size:12px\">Click <b>Confirm and Respond</b> below to approve or decline and add your remarks. The employee is emailed right after.</p>\n</div></div>",
+        "responseType": "customForm",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Decision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Confirm and Approve Leave"
+                  },
+                  {
+                    "option": "Decline"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Remarks",
+              "fieldType": "textarea",
+              "placeholder": "Your remarks for the employee",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "messageButtonLabel": "Confirm and Respond",
+          "responseFormTitle": "Confirm Emergency Leave",
+          "responseFormDescription": "The Director approved this as an emergency. Confirm or decline, and add remarks for the employee.",
+          "appendAttribution": false
+        }
+      },
+      "id": "bf5ebf92-bf60-4446-9271-f630b395a1e0",
+      "name": "HR Emergency Confirm",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        720
+      ],
+      "webhookId": "147c0d29-b4c4-496f-a48f-081d763e34bd",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "o6mbBvJmw9UlUE4d",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a",
+              "name": "approved",
+              "type": "boolean",
+              "value": "={{ (String(($('Director Emergency Review').first().json.data || {}).Decision || ($('Director Emergency Review').first().json.data || {}).decision || '').indexOf('Approve') === 0) && (String(($('HR Emergency Confirm').isExecuted ? ($('HR Emergency Confirm').first().json.data || {}) : {}).Decision || ($('HR Emergency Confirm').isExecuted ? ($('HR Emergency Confirm').first().json.data || {}) : {}).decision || '').indexOf('Confirm') === 0) }}"
+            },
+            {
+              "id": "h",
+              "name": "hr_decision",
+              "type": "string",
+              "value": "={{ $('HR Emergency Confirm').isExecuted ? ((String(($('HR Emergency Confirm').isExecuted ? ($('HR Emergency Confirm').first().json.data || {}) : {}).Decision || ($('HR Emergency Confirm').isExecuted ? ($('HR Emergency Confirm').first().json.data || {}) : {}).decision || '').indexOf('Confirm') === 0) ? 'Approved (emergency)' : 'Declined emergency') : 'Auto-rejected (monthly limit reached)' }}"
+            },
+            {
+              "id": "d",
+              "name": "director_decision",
+              "type": "string",
+              "value": "={{ (String(($('Director Emergency Review').first().json.data || {}).Decision || ($('Director Emergency Review').first().json.data || {}).decision || '').indexOf('Approve') === 0) ? 'Approved emergency' : 'Kept rejected' }}"
+            },
+            {
+              "id": "ty",
+              "name": "decision_type",
+              "type": "string",
+              "value": "={{ ((String(($('Director Emergency Review').first().json.data || {}).Decision || ($('Director Emergency Review').first().json.data || {}).decision || '').indexOf('Approve') === 0) && (String(($('HR Emergency Confirm').isExecuted ? ($('HR Emergency Confirm').first().json.data || {}) : {}).Decision || ($('HR Emergency Confirm').isExecuted ? ($('HR Emergency Confirm').first().json.data || {}) : {}).decision || '').indexOf('Confirm') === 0)) ? 'Emergency Approved' : 'Emergency Declined' }}"
+            },
+            {
+              "id": "dr",
+              "name": "director_remarks",
+              "type": "string",
+              "value": "={{ ($('Director Emergency Review').first().json.data || {}).Remarks || ($('Director Emergency Review').first().json.data || {}).remarks || '' }}"
+            },
+            {
+              "id": "hr",
+              "name": "hr_remarks",
+              "type": "string",
+              "value": "={{ ($('HR Emergency Confirm').isExecuted ? ($('HR Emergency Confirm').first().json.data || {}) : {}).Remarks || ($('HR Emergency Confirm').isExecuted ? ($('HR Emergency Confirm').first().json.data || {}) : {}).remarks || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a2a916a8-ae4b-4452-be63-2e074f14e9e2",
+      "name": "Emergency Decision",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2192,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "={{ $('Prepare Request').first().json.hr_email }}",
+        "subject": "=[Leave Request] {{ $('Prepare Request').first().json.employee_name }}: {{ $('Prepare Request').first().json.leave_date }} | {{ $('Prepare Request').first().json.request_id }}",
+        "message": "=<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden\">\n<div style=\"background:#1f3a5f;color:#ffffff;padding:18px 24px\"><div style=\"font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:0.85\">HR Leave Management</div><div style=\"font-size:20px;font-weight:bold;margin-top:4px\">New Leave Request for Review</div></div>\n<div style=\"padding:20px 24px;color:#1f2937;font-size:14px;line-height:1.6\">\n<p style=\"margin-top:0\">Dear HR Team,</p>\n<p>A new leave request has been submitted and is awaiting your decision.</p>\n<table style=\"width:100%;border-collapse:collapse;font-size:14px;margin:12px 0\">\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3;width:40%\">Request ID</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\"><b>{{ $('Prepare Request').first().json.request_id }}</b></td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Employee</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.employee_name }} ({{ $('Prepare Request').first().json.employee_id }})</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Email</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.employee_email }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Leave date</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.leave_date }} &middot; {{ $('Prepare Request').first().json.day_type }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Reason</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.reason }}</td></tr>\n<tr><td style=\"padding:8px 10px;background:#f9fafb;color:#6b7280;border-bottom:1px solid #eef0f3\">Submitted</td><td style=\"padding:8px 10px;border-bottom:1px solid #eef0f3\">{{ $('Prepare Request').first().json.submitted_at }} IST</td></tr>\n</table>\n<div style=\"margin:16px 0 4px;font-weight:bold\">Leave this month ({{ $('Prepare Request').first().json.month }}): {{ $('Prepare Request').first().json.leaves_used_before }} of {{ $('Prepare Request').first().json.monthly_limit }} days used &middot; {{ $('Prepare Request').first().json.remaining_days }} remaining</div>\n{{ $('Prepare Request').first().json.history_html }}\n<p style=\"margin:16px 0 0\"><a href=\"https://docs.google.com/spreadsheets/d/19aTTLg00QFRrnIXjdRlJ32s_ay6TOU9DxfV3dXfXklE/edit\" style=\"display:inline-block;padding:8px 14px;border:1px solid #1f3a5f;border-radius:6px;color:#1f3a5f;text-decoration:none\">View Leave Register</a></p>\n<p style=\"color:#6b7280;font-size:12px\">Use the buttons below to approve or reject. The employee will be notified automatically.</p>\n</div></div>",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "disapproveLabel": "Reject"
+          }
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4ff60ec8-43aa-4997-bd8c-9e0b5c57e5a7",
+      "name": "HR Approval",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        128
+      ],
+      "webhookId": "4b0c2829-7668-48f2-8c89-ffec9df1cc7d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "o6mbBvJmw9UlUE4d",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a",
+              "name": "approved",
+              "type": "boolean",
+              "value": "={{ $json.data.approved === true }}"
+            },
+            {
+              "id": "h",
+              "name": "hr_decision",
+              "type": "string",
+              "value": "={{ $json.data.approved === true ? 'Approved' : 'Rejected' }}"
+            },
+            {
+              "id": "d",
+              "name": "director_decision",
+              "type": "string",
+              "value": "Not required"
+            },
+            {
+              "id": "ty",
+              "name": "decision_type",
+              "type": "string",
+              "value": "Standard"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "13479eb4-9fcc-4595-96f7-6505215e24cb",
+      "name": "Standard Decision",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1744,
+        128
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Leave Request Form": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Get Employee Leaves",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Employee Leaves": {
+      "main": [
+        [
+          {
+            "node": "Prepare Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Request": {
+      "main": [
+        [
+          {
+            "node": "Save Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Request": {
+      "main": [
+        [
+          {
+            "node": "Over Monthly Limit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Over Monthly Limit?": {
+      "main": [
+        [
+          {
+            "node": "Auto Reject",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HR Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto Reject": {
+      "main": [
+        [
+          {
+            "node": "Final Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Decision": {
+      "main": [
+        [
+          {
+            "node": "Update Leave Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Leave Status": {
+      "main": [
+        [
+          {
+            "node": "Email Employee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Employee": {
+      "main": [
+        [
+          {
+            "node": "Get All Leaves",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Leaves": {
+      "main": [
+        [
+          {
+            "node": "Clear Register",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Register": {
+      "main": [
+        [
+          {
+            "node": "Format Register",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Register": {
+      "main": [
+        [
+          {
+            "node": "Write Register",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Register": {
+      "main": [
+        [
+          {
+            "node": "Clear Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Summary": {
+      "main": [
+        [
+          {
+            "node": "Build Monthly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Monthly Summary": {
+      "main": [
+        [
+          {
+            "node": "Write Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Summary": {
+      "main": [
+        [
+          {
+            "node": "Needs Emergency Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Emergency Review?": {
+      "main": [
+        [
+          {
+            "node": "Director Emergency Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Director Emergency Review": {
+      "main": [
+        [
+          {
+            "node": "Director Accepted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Director Accepted?": {
+      "main": [
+        [
+          {
+            "node": "HR Emergency Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Emergency Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HR Emergency Confirm": {
+      "main": [
+        [
+          {
+            "node": "Emergency Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emergency Decision": {
+      "main": [
+        [
+          {
+            "node": "Final Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HR Approval": {
+      "main": [
+        [
+          {
+            "node": "Standard Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standard Decision": {
+      "main": [
+        [
+          {
+            "node": "Final Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e4ddd3e6-6464-4245-a825-78033f5ee59d",
+  "meta": {
+    "instanceId": "58a1dc852148a65333a6da6d732cc61b6d7537658669b2586e23ce15fa6f76a1"
+  },
+  "nodeGroups": [
+    {
+      "id": "0d13b03c-2b82-4938-9bc8-b257915f9fc1",
+      "name": "Check leave balance",
+      "nodeIds": [
+        "9c76dd2f-95f2-4d6c-aeaa-76c89efde749",
+        "4937b7f4-fc0c-435a-a9e2-774bd67bce76",
+        "e338122e-2036-42c1-b893-65bf267f18da",
+        "83e1adb0-171b-4dc5-9277-3e35ba6ddc06",
+        "ed72b663-5aac-45f7-8dcf-93018f331234"
+      ],
+      "description": "Counts approved leave this month, logs the request as pending, and routes it: under the limit to HR, at the limit to auto-reject"
+    },
+    {
+      "id": "1a3d26a5-cd8b-41e9-af06-b50504f1acef",
+      "name": "Standard HR approval",
+      "nodeIds": [
+        "4ff60ec8-43aa-4997-bd8c-9e0b5c57e5a7",
+        "13479eb4-9fcc-4595-96f7-6505215e24cb"
+      ],
+      "description": "Under the monthly limit: HR approves or rejects with one click, seeing the employee leave history for the month"
+    },
+    {
+      "id": "b6f8aa41-1e05-41c4-b11b-a0516b644439",
+      "name": "Notify employee",
+      "nodeIds": [
+        "78ae84e4-2be6-416b-a204-b33fa0bb88df",
+        "eb436004-4eb7-4c6b-8dc1-1a3afefafd2d",
+        "3dad5f17-cb0b-4499-97a8-a41b33557628"
+      ],
+      "description": "Saves the outcome in the leave log and emails the employee with their monthly balance, copying HR (and the director when over limit)"
+    },
+    {
+      "id": "4358a3de-c3dd-46a7-9f42-fc085b81a68b",
+      "name": "Sync leave sheet",
+      "nodeIds": [
+        "0b2a3567-ba62-4fd2-9ba3-298aa4f26ce9",
+        "9a999bb0-76f2-426d-9466-d6ab0cf76bcf",
+        "9abc870a-b683-47c6-864c-860825add93e",
+        "2f353298-20d5-45f2-b8ab-ce72c0fbc2c5",
+        "bdd1b678-567e-46e2-8513-d388f0a340cc",
+        "9135d84d-fd7e-448f-a141-c69c856cbdf8",
+        "43207ddc-23ed-43dd-998f-e3d0c5aa7d7a"
+      ],
+      "description": "After every decision, rewrites the shared Google Sheet: full register plus per-employee monthly balance and leave dates"
+    },
+    {
+      "id": "6fa7ccda-c471-4b0d-98ec-8759bacf4d35",
+      "name": "Emergency leave review",
+      "nodeIds": [
+        "01d1f88b-fac7-478a-b2a5-09b52a8bf798",
+        "a2480133-bd41-40ae-950d-c63e3b8ced77",
+        "7a7cc5b5-6346-4370-b76c-b0652ccfd06c",
+        "bf5ebf92-bf60-4446-9271-f630b395a1e0",
+        "a2a916a8-ae4b-4452-be63-2e074f14e9e2"
+      ],
+      "description": "After an auto-rejection the director can approve as an emergency; HR then confirms and the employee gets an updated email"
+    }
+  ],
+  "id": "yYU11Cjljk6v2tNx",
+  "tags": []
+}

@@ -10,6 +10,12 @@
 - ⚡ n8n Workflow Automation
 - 📑 Excel & Google Sheets Integration
 
+
+## PROJECT DEMO LINK
+VIDEO 1- https://drive.google.com/file/d/1gsd2Cg-Y9EbMKdp5xS4b7mU9xrjK1VSx/view?usp=drive_link 
+
+VIDEO 2-https://drive.google.com/file/d/1KQlLtHZUd7KiNHAYKGFu2MHVF2fIsL9h/view?usp=drive_link 
+
 ### 🔄 Workflow
 **Employee Request → Leave Validation → HR/Director Approval → Automated Email**
 
